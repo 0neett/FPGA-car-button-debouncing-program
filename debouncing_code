@@ -1,0 +1,65 @@
+module debounce(
+    input  clk,
+    input  rst_n,
+    input  hall_in,
+    output reg pulse_clean,  // 消抖后的稳定电平（低=有车，高=无车）
+    output reg pulse_valid   // 电平变化时的有效脉冲
+);
+
+parameter TIME_20MS = 20'd1000000;
+
+reg [19:0] cnt;
+reg hall_sync1, hall_sync2;
+reg hall_debounced;
+reg hall_debounced_d1;
+reg last_sync2; // 记录上次的 hall_sync2 值
+
+// 两级同步器
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        hall_sync1 <= 1'b1;
+        hall_sync2 <= 1'b1;
+    end else begin
+        hall_sync1 <= hall_in;
+        hall_sync2 <= hall_sync1;
+    end
+end
+
+// 消抖逻辑：检查 hall_sync2 是否连续稳定了 TIME_20MS 个周期
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        cnt <= 20'd0;
+        last_sync2 <= 1'b1;
+        hall_debounced <= 1'b1;
+    end else begin
+        // 如果当前值和上一次的值不同，说明不稳定，清零计数器
+        if (hall_sync2 != last_sync2) begin
+            cnt <= 20'd0;
+        // 如果当前值和上一次的值相同，说明稳定，开始计数
+        end else if (cnt < TIME_20MS) begin
+            cnt <= cnt + 1'b1;
+        // 如果计数满了，说明信号已经稳定了足够长时间，更新输出
+        end else begin
+            hall_debounced <= hall_sync2;
+        end
+        
+        // 更新 last_sync2 为当前值
+        last_sync2 <= hall_sync2;
+    end
+end
+
+// 输出：稳定电平 + 边沿有效标志
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        hall_debounced_d1 <= 1'b1;
+        pulse_clean <= 1'b1;
+        pulse_valid <= 1'b0;
+    end else begin
+        hall_debounced_d1 <= hall_debounced;
+        pulse_clean <= hall_debounced;
+        pulse_valid <= (hall_debounced ^ hall_debounced_d1);
+    end
+end
+
+endmodule
+
